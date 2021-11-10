@@ -3,10 +3,14 @@ const http = require('http');
 const {v4: uuidv4} = require('uuid');
 const cors = require('cors');
 const twilio = require('twilio');
+const { dbConnection } = require('./db_config');
+const Session = require("./model");
 
 const PORT = process.env.PORT || 5002;
 
 const app = express();
+
+dbConnection();
 
 const server = http.createServer(app);
 
@@ -14,6 +18,7 @@ app.use(cors());
 
 let connectedUsers = [];
 let rooms = [];
+let sessions_scores = {};
 
 //CREATE ROUTE TO CHECK IF ROOM EXISTS
 app.get("/api/room-exists/:roomId", (req, res) => {
@@ -29,8 +34,25 @@ app.get("/api/room-exists/:roomId", (req, res) => {
     }else{
         // send response that room does not exists
         return res.send({roomExists: false, full: false});
-    
     }
+});
+
+//ADD N POINTS TO A GIVEN STUDENT
+app.get("/api/add-points", async (req, res) => {
+    var {identity, points, roomId} = req.query;
+    points = points? Number(points) : 1;    
+    const score = sessions_scores[roomId][identity];
+    if(score)
+        sessions_scores[roomId][identity]=sessions_scores[roomId][identity]+points;
+    else
+        sessions_scores[roomId][identity]=points;
+    res.send({current_points: sessions_scores[roomId][identity]});
+});
+
+//GET SCORES FROM ALL CONCLUDED SESSIONS
+app.get("/api/get-scores", async (req, res) => {
+    const data = await Session.find();
+    res.send(data);
 });
 
 const io = require('socket.io')(server, {
@@ -87,6 +109,9 @@ const createNewRoomHandler = (data, socket) => {
         id: roomId,
         connectedUsers: [newUser]
     };
+
+    //create session_scores key for that room
+    sessions_scores[roomId]={};
 
     //join socket.io room
     socket.join(roomId);
@@ -155,6 +180,19 @@ const disconnectHandler = (socket) => {
         }else{
             //close the room if no users are connected
             rooms = rooms.filter(r => r.id!== room.id);
+
+            var participants = [];
+            for(var identity in sessions_scores[room.id]){
+                participants = [...participants, {_id: identity, score: sessions_scores[room.id][identity]}];
+            }
+            const newSession = new Session({
+                _id: Date.now(),
+                participants
+            });
+
+            newSession.save();
+            //Remove room score session
+            delete sessions_scores[room];
         }
 
     }
