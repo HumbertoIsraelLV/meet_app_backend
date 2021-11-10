@@ -4,7 +4,8 @@ const {v4: uuidv4} = require('uuid');
 const cors = require('cors');
 const twilio = require('twilio');
 const { dbConnection } = require('./db_config');
-const Session = require("./model");
+const Session = require("./session_model");
+const User = require("./user_model");
 
 const PORT = process.env.PORT || 5002;
 
@@ -51,8 +52,28 @@ app.get("/api/add-points", async (req, res) => {
 
 //GET SCORES FROM ALL CONCLUDED SESSIONS
 app.get("/api/get-scores", async (req, res) => {
-    const data = await Session.find();
-    res.send(data);
+    var final_sessions = [];
+    const sessions = await Session.find();
+    const users = await User.find();
+    sessions.forEach((session)=>{
+        const start_date = session._id;
+        var participants = [];
+        session.participants.forEach((participant)=>{
+            var newUser = {};
+            newUser["_id"]=participant._id;
+            newUser["score"]=participant.score;
+            const user = users.find((user) => user._id==participant._id);
+            newUser["name"]=user.name;
+            participants = [...participants, newUser];
+        });
+        const teacher = users.find(user => user._id==session.teacher);
+
+        final_sessions = [...final_sessions, {
+            start_date, 
+            students: participants, 
+            teacher: {"_id": session.teacher, "name": teacher.name}}];
+    });
+    res.send(final_sessions);
 });
 
 const io = require('socket.io')(server, {
@@ -107,7 +128,9 @@ const createNewRoomHandler = (data, socket) => {
     //create new room
     const newRoom = {
         id: roomId,
-        connectedUsers: [newUser]
+        connectedUsers: [newUser],
+        start_date: Date.now(),
+        host: identity,
     };
 
     //create session_scores key for that room
@@ -183,10 +206,11 @@ const disconnectHandler = (socket) => {
 
             var participants = [];
             for(var identity in sessions_scores[room.id]){
-                participants = [...participants, {_id: identity, score: sessions_scores[room.id][identity]}];
+                participants = [...participants, {_id: parseInt(identity), score: sessions_scores[room.id][identity]}];
             }
             const newSession = new Session({
-                _id: Date.now(),
+                _id: room.start_date,
+                teacher: room.host,
                 participants
             });
 

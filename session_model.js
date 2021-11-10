@@ -5,6 +5,9 @@ const SessionSchema = new Schema({
     type: Date,
     required: true,
   },
+  teacher: {
+    type: Number,
+  },
   participants:[{
     _id: {
       type: Number,
