@@ -53,27 +53,32 @@ app.get("/api/add-points", async (req, res) => {
 //GET SCORES FROM ALL CONCLUDED SESSIONS
 app.get("/api/get-scores", async (req, res) => {
     var final_sessions = [];
-    const sessions = await Session.find();
-    const users = await User.find();
-    sessions.forEach((session)=>{
-        const start_date = session._id;
-        var participants = [];
-        session.participants.forEach((participant)=>{
-            var newUser = {};
-            newUser["_id"]=participant._id;
-            newUser["score"]=participant.score;
-            const user = users.find((user) => user._id==participant._id);
-            newUser["name"]=user.name;
-            participants = [...participants, newUser];
+    try{
+        const sessions = await Session.find();
+        const users = await User.find();
+        sessions.forEach((session)=>{
+            const start_date = session._id;
+            var participants = [];
+            session.participants.forEach((participant)=>{
+                var newUser = {};
+                newUser["_id"]=participant._id;
+                newUser["score"]=participant.score;
+                const user = users.find((user) => user._id==participant._id);
+                newUser["name"]=user.name;
+                participants = [...participants, newUser];
+            });
+            const teacher = users.find(user => user._id==session.teacher);
+    
+            final_sessions = [...final_sessions, {
+                start_date, 
+                students: participants, 
+                teacher: {"_id": session.teacher, "name": teacher.name}}];
         });
-        const teacher = users.find(user => user._id==session.teacher);
+        res.send(final_sessions);
 
-        final_sessions = [...final_sessions, {
-            start_date, 
-            students: participants, 
-            teacher: {"_id": session.teacher, "name": teacher.name}}];
-    });
-    res.send(final_sessions);
+    }catch(err){
+        console.log(err);
+    }
 });
 
 const io = require('socket.io')(server, {
@@ -111,7 +116,7 @@ io.on("connection", (socket) => {
 //socket.io handlers
 const createNewRoomHandler = (data, socket) => {
     const {identity, onlyAudio} = data;
-    const roomId = uuidv4();
+    const roomId = uuidv4().slice(0, 5);
 
     //create new user object
     const newUser = {
